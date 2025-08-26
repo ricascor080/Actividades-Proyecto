@@ -1,108 +1,70 @@
-# consumir_async_finkok.py
-from pathlib import Path
+import os
 import base64
-from zeep import Client, Settings
-from zeep.transports import Transport
-from requests import Session
+import zipfile
+import io
+from zeep import Client, exceptions as zeep_exceptions
 
-# --- CONFIG ---
-WSDL_ASYNC = "https://demo-facturacion.finkok.com/servicios/soap/async.wsdl"
-USER = "ricascor080@gmail.com"
-PASS = "Ricas002385."
+# ===== Configuración de Finkok =====
+username = 'ricascor080@gmail.com'
+password = 'Ricas002385.'
 
-# Ruta del ZIP (si ya tienes el .b64, puedes leerlo directo)
-ZIP_PATH = Path("cfdi_global40_pre.zip")
-# Si prefieres desde .b64: B64_PATH = Path("cfdi_global40_pre.zip.b64")
+# URL del servicio asíncrono de Finkok
+wsdl_url = "https://demo-facturacion.finkok.com/servicios/soap/async.wsdl"
 
-def cargar_zip_b64():
-    # Opción A: leer bytes y convertir aquí
-    data = ZIP_PATH.read_bytes()
-    return base64.b64encode(data).decode("ascii")
+# ===== Rutas de trabajo =====
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+XML_BATCH_DIR = os.path.join(BASE_DIR, 'lote_xml')
+OUT_DIR = os.path.join(BASE_DIR, 'salida_async')
 
-    # Opción B: si ya tienes el archivo .b64
-    # return B64_PATH.read_text(encoding="utf-8").strip()
+os.makedirs(XML_BATCH_DIR, exist_ok=True)
+os.makedirs(OUT_DIR, exist_ok=True)
 
-def main():
-    # Sugerido para SOAP
-    session = Session()
-    transport = Transport(session=session, timeout=60)
-    settings = Settings(strict=False, xml_huge_tree=True)
+# ===== Preparación del Lote de XMLs en un ZIP =====
+xml_files = [os.path.join(XML_BATCH_DIR, f) for f in os.listdir(XML_BATCH_DIR) if f.endswith('.xml')]
 
-    client = Client(wsdl=WSDL_ASYNC, transport=transport, settings=settings)
+if not xml_files:
+    print(f"No se encontraron archivos XML en la carpeta: {XML_BATCH_DIR}")
+    print("Por favor, coloca los XMLs que deseas timbrar en esa carpeta.")
+    exit(1)
 
-    # ---- (Opcional) inspecciona operaciones disponibles ----
-    # for name, op in client.wsdl.services[0].ports.values().__iter__().__next__().binding._operations.items():
-    #     print("OP:", name)
+# Crea un ZIP en memoria sin guardarlo en el disco
+zip_buffer = io.BytesIO()
+with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+    for file_path in xml_files:
+        zip_file.write(file_path, os.path.basename(file_path))
 
-    file_b64 = cargar_zip_b64()
+# Obtiene el contenido binario del ZIP y lo codifica en Base64
+zip_content = zip_buffer.getvalue()
+encoded_zip = base64.b64encode(zip_content).decode('utf-8')
 
-    # Algunos tenants exponen el método como uno de estos nombres.
-    posibles = [
-        "stamp_multi_async",
-        "stamps_multi_async",
-        "stampMultiAsync",
-        "stampsMultiAsync",
-        "async_stamp",
-        "asyncStamps",
-    ]
+# ===== Llamada al servicio asíncrono de Finkok =====
+try:
+    print("Conectando al servicio asíncrono...")
+    client = Client(wsdl_url)
 
-    respuesta = None
-    last_err = None
-    for nombre in posibles:
-        try:
-            metodo = getattr(client.service, nombre)
-            # Firma típica: (file, username, password)
-            respuesta = metodo(file_b64, USER, PASS)
-            print(f"Usando método: {nombre}")
-            break
-        except AttributeError as e:
-            last_err = e
-        except Exception as e:
-            # Si el método existe pero la firma difiere, imprime y sigue probando
-            print(f"Intento con {nombre} falló: {e}")
-            last_err = e
+    # Parámetros para la llamada
+    params = {
+        "file": encoded_zip,  # Envía el ZIP completo en una sola cadena Base64
+        "username": username,
+        "password": password
+    }
 
-    if respuesta is None:
-        raise RuntimeError(
-            f"No encontré el método asíncrono esperado en {WSDL_ASYNC}. "
-            f"Imprime las operaciones disponibles (ver bloque comentado) y elige el correcto. "
-            f"Último error: {last_err}"
-        )
+    print(f"Enviando un archivo ZIP con {len(xml_files)} XMLs para timbrado asíncrono...")
+    result = client.service.sign_multistamp(**params)
 
-    # --- Parseo de acuse / incidencias (estructura típica) ---
-    # Muchos WSDL de Finkok devuelven objetos tipo "AcuseRecepcionMultiAsync" con:
-    #   - Incidencias (arreglo)
-    #   - WorkProcessId (GUID)
-    #   - FechaRegistro, etc.
-    print("=== RESPUESTA ===")
-    for k in dir(respuesta):
-        if k.startswith("_"):
-            continue
-        try:
-            v = getattr(respuesta, k)
-            print(f"{k}: {v}")
-        except Exception:
-            pass
+    async_res = result
+    stamp_id = getattr(async_res, 'stamp_id', None)
 
-    # Ejemplo más amigable si existen esos campos:
-    try:
-        print("\nWorkProcessId:", getattr(respuesta, "WorkProcessId", None))
-        incidencias = getattr(respuesta, "Incidencias", None)
-        if incidencias:
-            print("\nIncidencias:")
-            # Puede venir como lista o como objeto con .Incidencia (lista)
-            items = []
-            if isinstance(incidencias, list):
-                items = incidencias
-            elif hasattr(incidencias, "Incidencia"):
-                items = incidencias.Incidencia or []
-            for i, inc in enumerate(items, 1):
-                try:
-                    print(f"- #{i} CodigoError={inc.CodigoError} Mensaje={inc.MensajeIncidencia}")
-                except Exception:
-                    print(f"- #{i} {inc}")
-    except Exception:
-        pass
+    if stamp_id:
+        print(f"Lote enviado con éxito. Folio de acuse (stamp_id): {stamp_id}")
+        print("Puedes usar este folio para consultar el estado del timbrado más tarde.")
+        with open(os.path.join(OUT_DIR, 'stamp_id.txt'), 'w') as f:
+            f.write(stamp_id)
+    else:
+        print("El servicio no devolvió un stamp_id válido.")
+        print(f"Mensaje de error: {getattr(async_res, 'incidents', 'N/D')}")
 
-if __name__ == "__main__":
-    main()
+except zeep_exceptions.Fault as e:
+    print(f"SOAP Fault al enviar el lote: ({e.code}) {e.message}")
+except Exception as e:
+    print(f"Ocurrió un error inesperado: {e}")
