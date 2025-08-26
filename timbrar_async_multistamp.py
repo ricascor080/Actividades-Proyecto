@@ -5,7 +5,8 @@ from zeep import Client, Settings
 from zeep.transports import Transport
 from requests import Session
 
-WSDL = "https://demo-facturacion.finkok.com/servicios/soap/async.wsdl"
+WSDL = "https://sftpdemo-facturacion.finkok.com/servicios/soap/async.wsdl"
+
 
 # <<< PON AQUÍ TUS CREDENCIALES >>>
 USER = "ricascor080@gmail.com"
