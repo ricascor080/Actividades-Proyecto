@@ -1,25 +1,36 @@
 <?php
-// timbrar.php — versión Ubuntu
+// timbrar.php — versión portable (Windows/Linux)
 date_default_timezone_set('America/Mexico_City');
 
 $username = 'ricascor080@gmail.com'; // Usuario de Finkok
 $password = 'Ricas002385.';          // Contraseña de Finkok
 
-// 1) Leer el XML previo (sin sello)
-$invoice_path = "/home/rcornejo/Actividades Proyecto/cfdi_global40_pre00.xml";
+// ===== Rutas seguras (relativas al script) =====
+$BASE_DIR = __DIR__;
+$OUT_DIR  = $BASE_DIR . DIRECTORY_SEPARATOR . 'salida';
+
+// Crea carpeta de salida si no existe
+if (!is_dir($OUT_DIR)) {
+    if (!mkdir($OUT_DIR, 0777, true) && !is_dir($OUT_DIR)) {
+        die("No se pudo crear la carpeta: $OUT_DIR\n");
+    }
+}
+
+// Coloca el XML previo junto a este script con este nombre
+$invoice_path = $BASE_DIR . DIRECTORY_SEPARATOR . 'cfdi_global40_pre001.xml';
 if (!file_exists($invoice_path)) {
     die("No se encontró el XML previo: $invoice_path\n");
 }
 $xml_content = file_get_contents($invoice_path);
 
-// 2) Parámetros para sign_stamp
+// ===== Parámetros para sign_stamp =====
 $params = array(
   "xml"      => $xml_content,
   "username" => $username,
   "password" => $password
 );
 
-// 3) Llamada al web service
+// ===== Cliente SOAP =====
 $client = new SoapClient(
   "https://demo-facturacion.finkok.com/servicios/soap/stamp.wsdl",
   array('trace' => 1, 'exceptions' => true, 'cache_wsdl' => WSDL_CACHE_NONE)
@@ -28,17 +39,17 @@ $client = new SoapClient(
 try {
   $result = $client->__soapCall("sign_stamp", array($params));
 
-  // 4) Guardar Request/Response
-  $requestPath  = "/home/rcornejo/Descargas/CFDI PRACTICA php/CFDI PRACTICA/SoapRequest.xml";
-  $responsePath = "/home/rcornejo/Descargas/CFDI PRACTICA php/CFDI PRACTICA/SoapResponse.xml";
+  // ===== Guardar Request/Response =====
+  $requestPath  = $OUT_DIR . DIRECTORY_SEPARATOR . "SoapRequest.xml";
+  $responsePath = $OUT_DIR . DIRECTORY_SEPARATOR . "SoapResponse.xml";
   file_put_contents($requestPath,  $client->__getLastRequest()  . PHP_EOL);
   file_put_contents($responsePath, $client->__getLastResponse() . PHP_EOL);
 
-  // 5) Guardar el CFDI timbrado
+  // ===== Guardar el CFDI timbrado =====
   $signRes = isset($result->sign_stampResult) ? $result->sign_stampResult : $result;
   $raw     = $signRes->xml ?? null;
 
-  $outTimbrado = "/home/rcornejo/Descargas/CFDI PRACTICA php/CFDI PRACTICA/Caso2_1.xml";
+  $outTimbrado = $OUT_DIR . DIRECTORY_SEPARATOR . "Caso2_1.xml";
 
   if (!$raw) {
       echo "La respuesta no incluye 'xml' timbrado.\n";
@@ -46,6 +57,7 @@ try {
       exit(1);
   }
 
+  // Algunas respuestas vienen base64; otras como XML escapado
   $maybe = base64_decode($raw, true);
   if ($maybe !== false && strpos($maybe, '<cfdi:Comprobante') !== false) {
       file_put_contents($outTimbrado, $maybe);
@@ -55,12 +67,16 @@ try {
   }
   echo "XML timbrado guardado en: $outTimbrado\n";
 
-  // 6) (Opcional) sobrescribir el previo con el timbrado
-  copy($outTimbrado, $invoice_path);
+  // (Opcional) sobrescribir el previo con el timbrado
+  if (!@copy($outTimbrado, $invoice_path)) {
+      echo "Aviso: no se pudo sobrescribir el XML previo. Verifica permisos.\n";
+  }
 
-  // 7) Mostrar datos clave
+  // ===== Mostrar datos clave =====
   $doc = new DOMDocument();
-  $doc->load($outTimbrado);
+  if (!$doc->load($outTimbrado)) {
+      die("No se pudo cargar el XML timbrado para lectura: $outTimbrado\n");
+  }
   $xp = new DOMXPath($doc);
   $xp->registerNamespace('cfdi','http://www.sat.gob.mx/cfd/4');
   $xp->registerNamespace('tfd','http://www.sat.gob.mx/TimbreFiscalDigital');
@@ -79,7 +95,9 @@ try {
 
 } catch (SoapFault $e) {
   echo "SOAP Fault: ({$e->faultcode}) {$e->faultstring}\n";
-  file_put_contents("/home/rcornejo/Descargas/CFDI PRACTICA php/CFDI PRACTICA/timbres/SoapFault_Request.xml",  $client->__getLastRequest()  ?? '');
-  file_put_contents("/home/rcornejo/Descargas/CFDI PRACTICA php/CFDI PRACTICA//SoapFault_Response.xml", $client->__getLastResponse() ?? '');
+  $faultReq = $OUT_DIR . DIRECTORY_SEPARATOR . "SoapFault_Request.xml";
+  $faultRes = $OUT_DIR . DIRECTORY_SEPARATOR . "SoapFault_Response.xml";
+  @file_put_contents($faultReq, $client->__getLastRequest()  ?? '');
+  @file_put_contents($faultRes, $client->__getLastResponse() ?? '');
   exit(1);
 }

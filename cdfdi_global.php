@@ -10,7 +10,7 @@
 date_default_timezone_set('America/Mexico_City');
 
 // ===== Config rápida =====
-$N = 10; // cámbialo a 3000 si quieres
+$N = 3000; // cámbialo a 3000 si quieres
 
 $datos = [
   'Serie'             => 'FG',
@@ -157,7 +157,7 @@ $root->setAttribute('SubTotal', formato2($subtotal));
 $root->setAttribute('Total',    formato2($total));
 
 // Guardar
-$nombreArchivo = __DIR__ . DIRECTORY_SEPARATOR . 'cfdi_global40_pre00.xml';
+$nombreArchivo = __DIR__ . DIRECTORY_SEPARATOR . 'cfdi_global40_pre001.xml';
 $xml->save($nombreArchivo);
 echo "XML GLOBAL generado (básico, sin traslados): $nombreArchivo\n";
 

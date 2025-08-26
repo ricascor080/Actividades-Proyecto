@@ -7,8 +7,8 @@ from requests import Session
 
 # --- CONFIG ---
 WSDL_ASYNC = "https://demo-facturacion.finkok.com/servicios/soap/async.wsdl"
-USER = "TU_USUARIO_FINKOK"
-PASS = "TU_PASSWORD_FINKOK"
+USER = "ricascor080@gmail.com"
+PASS = "Ricas002385."
 
 # Ruta del ZIP (si ya tienes el .b64, puedes leerlo directo)
 ZIP_PATH = Path("cfdi_global40_pre.zip")
