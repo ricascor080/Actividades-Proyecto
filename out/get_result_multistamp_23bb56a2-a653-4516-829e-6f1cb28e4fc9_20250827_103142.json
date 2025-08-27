@@ -1,0 +1,17 @@
+{
+  "Incidencias": {
+    "Incidencia": [
+      {
+        "IdIncidencia": "ID_incidencia",
+        "RfcEmisor": null,
+        "Uuid": null,
+        "CodigoError": "300",
+        "WorkProcessId": "WorkProcessId",
+        "MensajeIncidencia": "El usuario o contraseña son inválidos",
+        "ExtraInfo": null,
+        "NoCertificadoPac": "30001000000500003456",
+        "FechaRegistro": "2025-08-27T10:31:42"
+      }
+    ]
+  }
+}
